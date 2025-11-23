@@ -1,4 +1,5 @@
 # condensité
+(Pronounciation: _kon-dahn-see-tay_, like the French word for "density".)
 
 The approach behind `condensité` enables transforming conditional density estimation into a single nonparametric regression task. Our package implements this approach and provides a way of turning regressors from common libraries such as `sklearn` or `torch` into conditional density estimators. See below for a complete example. See `example.py` for further examples using the reference implementations in `src/example_models`.
 

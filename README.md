@@ -1,7 +1,11 @@
 # condensité
 (Pronounciation: _kon-dahn-see-tay_, like the French word for "density".)
+Recommended installation via
+```
+pip install condensite
+```
 
-The approach behind `condensité` enables transforming conditional density estimation into a single nonparametric regression task. Our package implements this approach and provides a way of turning regressors from common libraries such as `sklearn` or `torch` into conditional density estimators. See below for a complete example. See `example.py` for further examples using the reference implementations in `src/example_models`.
+The approach behind _condensité_ enables transforming conditional density estimation into a single nonparametric regression task. This package provides an implementation that allows turning regressors from popular machine learning libraries such as _sklearn_ or _torch_ into conditional density estimators. See below for a complete example, further ones can be found in `src/examples`.
 
 ```python
 import torch

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "condensite"
+description = "Transforming conditional density estimation into a single nonparametric regression task."
+authors = [
+    {name = "Alexander Reisach", email = "alexander.reisach@math.cnrs.fr"}
+]
+license = {text = "BSD 3-Clause License"}
+keywords = [
+  "conditional density estimation",
+  "machine learning",
+  "statistics",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "License :: OSI Approved :: BSD License",
+  "Intended Audience :: Science/Research",
+]
+dependencies = [
+    "torch",
+    "numpy",
+    "scikit-learn",
+    "lightgbm",
+]
+readme = "README.md"
+version = "0.0.1"

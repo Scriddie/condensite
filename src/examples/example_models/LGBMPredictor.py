@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import condensite as cde
 import lightgbm as lgb
+import numpy as np
 import warnings
 warnings.filterwarnings("ignore", message="Converting data to scipy sparse matrix.")
 
@@ -33,3 +34,4 @@ class LGBMPredictor(cde.CondensitePredictor):
         x, y = xtorch.numpy(), ytorch.numpy()
         train_data = lgb.Dataset(x, label=y)
         self.tree = lgb.train(self.params, train_data)
+        return np.mean(np.square(self.tree.predict(x)-y)).item()  # mse

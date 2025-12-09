@@ -15,6 +15,7 @@ The approach behind _condensité_ enables transforming conditional density estim
 **Example**
 ```python
 import torch
+import numpy as np
 import condensite as cde
 from sklearn.ensemble import HistGradientBoostingRegressor
 
@@ -42,7 +43,9 @@ class TreePredictor(cde.CondensitePredictor):
                                                shuffle=True, 
                                                collate_fn=cde.concat_collate)
         xtorch, ytorch = next(iter(train_DL))  # single batch of all data
-        self.tree.fit(xtorch.numpy(), ytorch.numpy())
+        x, y = xtorch.numpy(), ytorch.numpy()
+        self.tree.fit(x, y)
+        return np.mean(np.square(self.tree.predict(x)-y))  # mse
 
 # instantiate and wrap using Condensite
 tree_predictor = TreePredictor(params={

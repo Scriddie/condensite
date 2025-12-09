@@ -34,12 +34,12 @@ sklearn_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
 lgbm_predictor = LGBMPredictor(params={
     'objective': 'regression', 
     'metric': 'mse',
-    'min_data_in_leaf': 50,
+    'min_child_samples': 50,
     'max_bin': 40,
     'num_leaves': 40,
 })
 lgbm_model = cde.Condensite(lgbm_predictor, h=0.01, M=100, name='lgbm_model')
-lgbm_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
+lgbm_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, verbose=1)
 
 # model 3) condensité with a torch predictor
 torch_predictor = NNPredictor(
@@ -50,7 +50,7 @@ torch_predictor = NNPredictor(
     weight_decay=1e-4
 )
 torch_model = cde.Condensite(torch_predictor, h=0.01, M=100, name='torch_model')
-torch_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, epochs=20, patience=5, verbose=1)
+torch_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, epochs=20, patience=5)
 
 # ------------------------------------------------------------------------------
 

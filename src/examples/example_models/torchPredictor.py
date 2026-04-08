@@ -88,7 +88,7 @@ class NNPredictor(nn.Module, CondensitePredictor):
             # compute MSE and update weights
             self.optimizer.zero_grad()
             pred = self.forward(feature_batch)
-            loss = loss_fn(target_batch, pred)
+            loss = loss_fn(target_batch, pred.reshape(-1,1))
             loss.backward()
             self.optimizer.step()
             epoch_losses.append(loss.item())

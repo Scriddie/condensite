@@ -28,8 +28,8 @@ tree_predictor = TreePredictor(params={
     'max_leaf_nodes': 100,
     'l2_regularization': 0.1,
 })
-sklearn_model = cde.Condensite(tree_predictor, h=0.01, M=100, name='sklearn_model')
-sklearn_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
+hgb_model = cde.Condensite(tree_predictor, h=0.01, M=100, name='hgb_model')
+hgb_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
 
 # model 2) condensité with a lgbm predictor
 lgbm_predictor = LGBMPredictor(params={
@@ -65,6 +65,6 @@ tfm_model.fit(x_train, y_train, train_frac=1.0, n_grid_ISE=None)
 
 # compare their out-of-sample ISE
 x_test, y_test = sample_data()
-for model in [sklearn_model, lgbm_model, torch_model, tfm_model]:
+for model in [hgb_model, lgbm_model, torch_model, tfm_model]:
     test_ISE = cde.utils.ISE(model, x_test, y_test, n_grid=100).item()
     print(f'{model.name}:\t {test_ISE=:.4f}')

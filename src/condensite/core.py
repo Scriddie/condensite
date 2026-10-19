@@ -141,18 +141,24 @@ class Condensite:
         self.t_scale = None
         self.prediction_batch_size=prediction_batch_size
 
-    def fit(self, x, y, train_frac, n_grid_ISE, verbose=0, epochs=None, patience=None):
+    def fit(self, x, y, train_frac=1., n_grid_ISE=None, verbose=0, epochs=None, patience=None):
         """
         Train the predictor on the data.
         Args:
             x (tensor): (n x d)
             y (tensor): (n x 1)
-            train_frac (float): fraction fo data to use for training, rest is used for cross-validation.
+            train_frac (float): fraction fo data to use for training, rest is used for cross-validation (defaults to 1).
             n_grid_ISE: number of grid points for ISE in cross-validation.
             verbose (int): verbosity of training.
             epochs (int or None): train epochs, None if irrelevant
-            patience (int or None): early stopping count, None if irrelevant
+            patience (int or None): early stopping count, None means no early stopping
         """
+        assert (train_frac > 0.) and (train_frac <= 1.), "train_frac must be in (0,1]."
+        if train_frac == 1.0:
+            assert n_grid_ISE is None, "100% of samples used for training, cannot perform cross-validation (n_grid_ISE should be None)."
+        if n_grid_ISE is None:
+            assert train_frac == 1.0, "if there is no grid for cross-validation ISE, we expect training on full dataset. Please subsample manually if this was intentional."
+
         # check if epochs relevant
         if epochs is None:
             epochs = 1
@@ -185,24 +191,39 @@ class Condensite:
         for epoch in range(epochs):
             # call the predictor's fit method
             mse = self.predictor.fit(train_dataset)
-            # compute ISE on validation set
-            val_ise = ut.ISE(self, x_val, y_val, n_grid_ISE)
+            if mse is not None:
+                mse = round(mse, 4)
+
+            # fit on validation set
+            if n_grid_ISE is not None:
+                # compute ISE on validation set
+                val_ise = ut.ISE(self, x_val, y_val, n_grid_ISE)
+                val_output = f" validation ISE: {val_ise:.4f}"
+            else:
+                val_ise = float('inf')
+                val_output = ""
+
+            # relay training output
             if verbose > 0:
                 if epochs > 1:
-                    logger.info(f"Epoch {epoch+1}/{epochs}, Train mse: {mse:.4f}, Validation ISE: {val_ise:.4f}")
+                    logger.info(f"Epoch {epoch+1}/{epochs}, train mse: {mse}"+ val_output)
                 else:
-                    logger.info(f"Train mse: {mse:.4f}, Validation ISE: {val_ise:.4f}")
+                    logger.info(f"Train mse: {mse}" + val_output)
+
             # Early stopping
-            if val_ise < best_val_ise:
-                best_val_ise = val_ise
-                best_epoch_predictor = deepcopy(self.predictor)
-                epochs_without_improvement = 0
+            if train_frac < 1.:
+                if val_ise < best_val_ise:  # expected to apply in first epoch
+                    best_val_ise = val_ise
+                    best_epoch_predictor = deepcopy(self.predictor)
+                    epochs_without_improvement = 0
+                else:
+                    epochs_without_improvement += 1
+                    if (patience is not None) and (epochs_without_improvement >= patience):
+                        if verbose>0:
+                            logger.info(f'Early stopping at epoch {epoch + 1}')
+                        break
             else:
-                epochs_without_improvement += 1
-                if epochs_without_improvement >= patience:
-                    if verbose>0:
-                        logger.info(f'Early stopping at epoch {epoch + 1}')
-                    break
+                best_epoch_predictor = self.predictor
         
         # select best network
         self.predictor = best_epoch_predictor
@@ -211,7 +232,7 @@ class Condensite:
         # return run summary
         return {'h': self.h,
                 'M': self.M,
-                'epochs': epoch,
+                'epochs': epoch,  # note that count starts from 0; this is total epochs run, not epoch of best model.
                 'ISE': best_val_ise}
 
     def set_sample_scaling_params(self, x_train, y_train, y_aux_train):

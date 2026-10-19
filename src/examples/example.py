@@ -5,6 +5,7 @@ import torch.distributions as dist
 from example_models.sklearnPredictor import TreePredictor
 from example_models.LGBMPredictor import LGBMPredictor
 from example_models.torchPredictor import NNPredictor
+from example_models.TabPFNPredictor import TabPFNPredictor
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -52,10 +53,18 @@ torch_predictor = NNPredictor(
 torch_model = cde.Condensite(torch_predictor, h=0.01, M=100, name='torch_model')
 torch_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, epochs=20, patience=5)
 
+# model 4) condensité with a TabPFN predictor
+tfm_predictor = TabPFNPredictor(
+    n_estimators=1,
+)
+# smaller $M$ (and consequently larger $h$) here to keep prediction time fast
+tfm_model = cde.Condensite(tfm_predictor, h=0.1, M=20, name='tfm_model')
+tfm_model.fit(x_train, y_train, train_frac=1.0, n_grid_ISE=None)
+
 # ------------------------------------------------------------------------------
 
 # compare their out-of-sample ISE
 x_test, y_test = sample_data()
-for model in [sklearn_model, lgbm_model, torch_model]:
+for model in [sklearn_model, lgbm_model, torch_model, tfm_model]:
     test_ISE = cde.utils.ISE(model, x_test, y_test, n_grid=100).item()
     print(f'{model.name}:\t {test_ISE=:.4f}')

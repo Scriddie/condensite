@@ -30,6 +30,8 @@ dependencies = [
     "numpy",
     "scikit-learn",
     "lightgbm",
+    "pytest>=9.1.1",
+    "tabpfn>=9.2.0",
 ]
 readme = "README.md"
 version = "0.0.1"

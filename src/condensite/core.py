@@ -114,9 +114,10 @@ class Condensite:
     Fits CondensitePredictor objects to training data from a conditional density and provides a prediction function for the fitted object. 
     """
 
-    def __init__(self, predictor, h, M, 
-                 name='condensite', 
-                 prediction_batch_size=None):
+    def __init__(self, predictor, h, M,
+                 name='condensite',
+                 prediction_batch_size=None,
+                 reflect=True):
         """
         Args:
             predictor (CondensitePredictor): conditional density estimator.
@@ -124,12 +125,14 @@ class Condensite:
             M (int): number of auxiliary samples.
             name (str): model name
             prediction_batch_size (int): batch size when predicting (to limit RAM usage)
+            reflect (bool): reflect observations at the boundaries of [0,1] when computing targets (c.f. compute_targets).
         """
         self.name = name
         self.device = predictor.device()
         self.predictor = predictor.to(self.device)
         self.h = h
         self.M = M
+        self.reflect = reflect
         # parameters for standardization; crucial for training stability
         self.x_mean = None
         self.x_scale = None
@@ -346,7 +349,7 @@ class Condensite:
 
     def compute_targets(self, y_01, y_aux):
         """ 
-        Compute targets via $K_h(Y_i-Y_{im})$.
+        Compute targets via $K_h(Y_i-Y_{im})$. If self.reflect, each observation is additionally reflected at 0 and 1, i.e. $K_h(Y_i-Y_{im}) + K_h(-Y_i-Y_{im}) + K_h((2-Y_i)-Y_{im})$, so that no kernel mass is lost at the boundaries of the rescaled support [0,1].
         Args:
             y_01 (torch.Tensor): observed y rescaled to [0,1]
             y_aux (torch.Tensor): auxiliary labels for target construction
@@ -357,6 +360,11 @@ class Condensite:
         Kh = dist.MultivariateNormal(loc=torch.zeros(1),
                                      covariance_matrix=torch.eye(1) * self.h**2)
         targets = torch.exp(Kh.log_prob(y_bar - y_aux))
+        if self.reflect:
+            # mirror images of each observation at 0 and 1
+            targets = (targets
+                       + torch.exp(Kh.log_prob(-y_bar - y_aux))
+                       + torch.exp(Kh.log_prob((2 - y_bar) - y_aux)))
         return targets
 
     def save(self, path):

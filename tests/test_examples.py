@@ -20,9 +20,9 @@ def test_readme_example_runs():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(),
-                    reason="TabPFN refuses training sets above 1000 rows on CPU")
+                    reason="TabICL is too slow on CPU for this example")
 def test_compare_predictors_example_runs(monkeypatch):
-    pytest.importorskip("tabpfn", reason="requires the 'examples' extra")
+    pytest.importorskip("tabicl", reason="requires the 'examples' extra")
     # the example imports from example_models/, which `python script.py` would put on the path
     monkeypatch.syspath_prepend(str(EXAMPLES))
     runpy.run_path(str(EXAMPLES / "compare_predictors_example.py"), run_name="__main__")

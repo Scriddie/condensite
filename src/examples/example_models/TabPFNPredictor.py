@@ -1,4 +1,7 @@
-""" Use TabPFN as predictor in Condensité. """
+"""
+Use TabPFN as predictor in Condensité.
+Not currently used in any of the examples, but provided for convenience.
+"""
 import torch
 import numpy as np
 from condensite import CondensitePredictor

@@ -117,7 +117,8 @@ class Condensite:
     def __init__(self, predictor, h, M,
                  name='condensite',
                  prediction_batch_size=None,
-                 reflect=True):
+                 reflect=True,
+                 y_range=None):
         """
         Args:
             predictor (CondensitePredictor): conditional density estimator.
@@ -126,6 +127,7 @@ class Condensite:
             name (str): model name
             prediction_batch_size (int): batch size when predicting (to limit RAM usage)
             reflect (bool): reflect observations at the boundaries of [0,1] when computing targets (c.f. compute_targets).
+            y_range (tuple or None): fixed (min, max) for the min-max scaling of y, e.g. for labels with known support; None uses the range of the training labels.
         """
         self.name = name
         self.device = predictor.device()
@@ -133,6 +135,7 @@ class Condensite:
         self.h = h
         self.M = M
         self.reflect = reflect
+        self.y_range = y_range
         # parameters for standardization; crucial for training stability
         self.x_mean = None
         self.x_scale = None
@@ -249,9 +252,14 @@ class Condensite:
         # standard scaling for x
         self.x_mean = x_train.mean(dim=0).to(self.device)
         self.x_scale = x_train.std(dim=0).to(self.device)
-        # for min-max scaling of y
-        self.y_min = y_train.min()
-        self.y_max = y_train.max()
+        # for min-max scaling of y (observed range unless a fixed range is given)
+        if self.y_range is None:
+            self.y_min = y_train.min()
+            self.y_max = y_train.max()
+        else:
+            self.y_min, self.y_max = self.y_range
+            if (y_train.min() < self.y_min) or (y_train.max() > self.y_max):
+                raise ValueError("y_train lies outside y_range.")
         # standard scaling for auxiliary samples y_aux
         self.y_aux_mean = y_aux_train.mean(dim=0).to(self.device)
         self.y_aux_scale = y_aux_train.std(dim=0).to(self.device)

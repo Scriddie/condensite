@@ -1,21 +1,21 @@
 # condensité
 (pronounciation: _kon-dahn-see-tay_, like the French word for "density")
 
-**Installation**
+**Installation.**
 ```
 pip install condensite
 ```
 
-**Paper**
+**Paper.**
 [Transforming Conditional Density Estimation Into a Single Nonparametric Regression Task](https://arxiv.org/abs/2511.18530)
 
-**Summary**
+**Summary.**
 The approach behind _condensité_ enables transforming conditional density estimation into a single nonparametric regression task. This package provides an implementation that allows turning regressors from popular machine learning libraries such as _sklearn_ or _torch_ into conditional density estimators. See below for a complete example, further ones can be found in `src/examples`.
 
-**Benchmarking**
-For a benchmarking effort of conditional density estimators, see https://scoringbench.com/, which includes condensité using a HistGradBoostingRegressor. Note that condensité is a general approach that could be used in combination with any regressor.
+**Benchmarking.**
+For a benchmarking effort of conditional density estimators, see https://scoringbench.com/, which includes condensité using lightGBM as a regressor. Note that condensité is a general approach that could be used in combination with any regressor.
 
-**Example**
+**Example.**
 ```python
 import torch
 import numpy as np
@@ -77,7 +77,7 @@ test_ISE = cde.utils.ISE(hgb_model, x_test, y_test, n_grid=100).item()
 print(f'{hgb_model.name}:\t {test_ISE=:.4f}')
 ```
 
-**Reference**
+**Reference.**
 If you find our algorithms useful please consider citing
 ```
 @misc{reisach2025condensite,

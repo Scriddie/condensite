@@ -26,3 +26,7 @@ def test_compare_predictors_example_runs(monkeypatch):
     # the example imports from example_models/, which `python script.py` would put on the path
     monkeypatch.syspath_prepend(str(EXAMPLES))
     runpy.run_path(str(EXAMPLES / "compare_predictors_example.py"), run_name="__main__")
+
+
+def test_pit_boosting_example_runs():
+    runpy.run_path(str(EXAMPLES / "pit_boosting_example.py"), run_name="__main__")

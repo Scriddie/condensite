@@ -318,6 +318,53 @@ class Condensite:
         if not x.is_cuda:
             mean, scale = mean.cpu(), scale.cpu()
         return (x - mean) / (scale + 1e-8)
+    
+    @staticmethod
+    def aux_sampler():
+        """
+        Auxiliary samples on the rescaled support [0,1] of y: a function drawing samples of a given shape, and the mean
+        and standard deviation of the samples (used for standardization).
+        """
+        return (lambda shape: torch.empty(shape).uniform_(0, 1)), 0.5, 12**-0.5
+
+    def compute_targets(self, y_01, y_aux, h, M):
+        """
+        Compute targets via $K_h(Y_i-Y_{im})$. If self.reflect, each observation is additionally reflected at 0 and 1, i.e. $K_h(Y_i-Y_{im}) + K_h(-Y_i-Y_{im}) + K_h((2-Y_i)-Y_{im})$, so that no kernel mass is lost at the boundaries of the rescaled support [0,1].
+        Args:
+            y_01 (torch.Tensor): observed y rescaled to [0,1]
+            y_aux (torch.Tensor): auxiliary labels for target construction, in blocks of M per observation
+            h (float): kernel bandwidth
+            M (int): number of auxiliary samples per observation
+        """
+        # prepare for grid
+        y_bar = y_01.repeat_interleave(M, dim=0).view(-1,1)
+        # compute auxiliary densities
+        Kh = dist.MultivariateNormal(loc=torch.zeros(1),
+                                     covariance_matrix=torch.eye(1) * h**2)
+        targets = torch.exp(Kh.log_prob(y_bar - y_aux))
+        if self.reflect:
+            # mirror images of each observation at 0 and 1
+            targets = (targets
+                       + torch.exp(Kh.log_prob(-y_bar - y_aux))
+                       + torch.exp(Kh.log_prob((2 - y_bar) - y_aux)))
+        return targets
+
+    def make_density(self, cdes, y):
+        """
+        Make sure estimated densities are positive and add up to 1 under numerical integration.
+        Args:
+            cdes (torch.Tensor): (n x n_grid) density estimates
+        """
+        # force positive
+        cdes = torch.where(cdes<0, 0, cdes)
+        area = torch.trapz(cdes, y.flatten(), dim=1).reshape(-1, 1)
+        # if we predict zero density everywhere, assume a uniform distribution
+        empty_pred = torch.argwhere(area.ravel() == 0)
+        cdes[empty_pred, :] = 1/cdes.shape[1]
+        area[empty_pred] = 1
+        # normalize density
+        cdes = cdes / area
+        return cdes
 
     def predict(self, x, n_grid):
         """
@@ -364,53 +411,6 @@ class Condensite:
         y_points = y_points_01 * (self.y_max - self.y_min) + self.y_min
         cdes = self.make_density(cdes, y_points)        
         return cdes, y_points
-
-    def make_density(self, cdes, y):
-        """
-        Make sure estimated densities are positive and add up to 1 under numerical integration.
-        Args:
-            cdes (torch.Tensor): (n x n_grid) density estimates
-        """
-        # force positive
-        cdes = torch.where(cdes<0, 0, cdes)
-        area = torch.trapz(cdes, y.flatten(), dim=1).reshape(-1, 1)
-        # if we predict zero density everywhere, assume a uniform distribution
-        empty_pred = torch.argwhere(area.ravel() == 0)
-        cdes[empty_pred, :] = 1/cdes.shape[1]
-        area[empty_pred] = 1
-        # normalize density
-        cdes = cdes / area
-        return cdes
-    
-    @staticmethod
-    def aux_sampler():
-        """
-        Auxiliary samples on the rescaled support [0,1] of y: a function drawing samples of a given shape, and the mean
-        and standard deviation of the samples (used for standardization).
-        """
-        return (lambda shape: torch.empty(shape).uniform_(0, 1)), 0.5, 12**-0.5
-
-    def compute_targets(self, y_01, y_aux, h, M):
-        """
-        Compute targets via $K_h(Y_i-Y_{im})$. If self.reflect, each observation is additionally reflected at 0 and 1, i.e. $K_h(Y_i-Y_{im}) + K_h(-Y_i-Y_{im}) + K_h((2-Y_i)-Y_{im})$, so that no kernel mass is lost at the boundaries of the rescaled support [0,1].
-        Args:
-            y_01 (torch.Tensor): observed y rescaled to [0,1]
-            y_aux (torch.Tensor): auxiliary labels for target construction, in blocks of M per observation
-            h (float): kernel bandwidth
-            M (int): number of auxiliary samples per observation
-        """
-        # prepare for grid
-        y_bar = y_01.repeat_interleave(M, dim=0).view(-1,1)
-        # compute auxiliary densities
-        Kh = dist.MultivariateNormal(loc=torch.zeros(1),
-                                     covariance_matrix=torch.eye(1) * h**2)
-        targets = torch.exp(Kh.log_prob(y_bar - y_aux))
-        if self.reflect:
-            # mirror images of each observation at 0 and 1
-            targets = (targets
-                       + torch.exp(Kh.log_prob(-y_bar - y_aux))
-                       + torch.exp(Kh.log_prob((2 - y_bar) - y_aux)))
-        return targets
 
     def save(self, path):
         """ Save the model. """

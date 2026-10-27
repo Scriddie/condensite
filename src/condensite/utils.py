@@ -33,15 +33,15 @@ def ISE(model, x, y, n_grid):
     return ISE_from_pred(cdes_grid, y_points, y)
 
 
-def train_test_split(x, y, train_frac):
-    """ 
+def train_test_split(x, y, val_frac):
+    """
     Akin to sklearn.model_selection.train_test_split.
     Args:
         x (torch.Tensor): features
         y (torch.Tensor): labels
-        train_frac (float): fraction to be used for training
+        val_frac (float): fraction to be held out (not used for training)
     """
-    split_idx = int(train_frac*len(y))
+    split_idx = len(y) - int(val_frac*len(y))
     mask = torch.randperm(len(y))
     train_mask, test_mask = mask[:split_idx], mask[split_idx:]
     x_train, x_test = x[train_mask], x[test_mask]

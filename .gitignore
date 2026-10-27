@@ -3,3 +3,4 @@ env/
 __pycache__/
 .pytest_cache
 .vscode/
+DEVELOPMENT_NOTES.md

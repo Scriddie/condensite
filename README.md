@@ -56,7 +56,7 @@ tree_predictor = TreePredictor(params={
     'max_leaf_nodes': 100,
     'l2_regularization': 0.1,
 })
-hgb_model = cde.Condensite(tree_predictor, h=0.01, M=100, name='hgb_model')
+hgb_model = cde.Condensite(tree_predictor, h=[0.01], c=1, name='hgb_model')
 
 # generate some data and fit
 def sample_data(n_obs=1000, n_features=10):
@@ -69,7 +69,7 @@ def sample_data(n_obs=1000, n_features=10):
 
 # fit conditional density estimator
 x_train, y_train = sample_data()
-hgb_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
+hgb_model.fit(x_train, y_train, val_frac=0.2, n_grid_ISE=100)
 
 # evaluate fit out-of-sample
 x_test, y_test = sample_data()

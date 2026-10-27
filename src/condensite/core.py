@@ -114,16 +114,18 @@ class Condensite:
     Fits CondensitePredictor objects to training data from a conditional density and provides a prediction function for the fitted object. 
     """
 
-    def __init__(self, predictor, h, M,
-                 name='condensite',
-                 prediction_batch_size=None,
-                 reflect=True,
-                 y_range=None):
+    def __init__(self, predictor: CondensitePredictor, 
+                 h: list[float],
+                 c: float,
+                 name: str = 'condensite',
+                 prediction_batch_size: int | None = None,
+                 reflect: bool = True,
+                 y_range: tuple[float, float] | None = None):
         """
         Args:
             predictor (CondensitePredictor): conditional density estimator.
-            h (int): sharpness; for transformation into regression task.
-            M (int): number of auxiliary samples.
+            h (list of float): candidate kernel bandwidths on the [0,1]-rescaled y; with several, fit selects the one with the lowest validation ISE (requires val_frac > 0).
+            c (float): M*h; bandwidth h uses M = round(c/h) auxiliary samples per observation.
             name (str): model name
             prediction_batch_size (int): batch size when predicting (to limit RAM usage)
             reflect (bool): reflect observations at the boundaries of [0,1] when computing targets (c.f. compute_targets).
@@ -133,7 +135,9 @@ class Condensite:
         self.device = predictor.device()
         self.predictor = predictor.to(self.device)
         self.h = h
-        self.M = M
+        self.best_h = None  # set by fit
+        self.c = c
+        self.M_best_h = None  # number of auxiliary samples of the selected h; set by fit
         self.reflect = reflect
         self.y_range = y_range
         # parameters for standardization; crucial for training stability
@@ -141,57 +145,97 @@ class Condensite:
         self.x_scale = None
         self.y_min = None
         self.y_max = None
-        self.y_aux_mean = None
-        self.y_aux_scale = None
         self.t_mean = None
         self.t_scale = None
         self.prediction_batch_size=prediction_batch_size
 
-    def fit(self, x, y, train_frac=1., n_grid_ISE=None, verbose=0, epochs=None, patience=None):
+    def fit(self, x, y, *, val_frac=0., n_grid_ISE=100, verbose=0, epochs=None, early_stopping_epochs=None):
         """
         Train the predictor on the data.
         Args:
             x (tensor): (n x d)
             y (tensor): (n x 1)
-            train_frac (float): fraction fo data to use for training, rest is used for cross-validation (defaults to 1).
-            n_grid_ISE: number of grid points for ISE in cross-validation.
+            val_frac (float): validation data frac in order to compute ISE for best epoch selection and early stopping
+            n_grid_ISE (int): number of grid points for the validation ISE.
             verbose (int): verbosity of training.
-            epochs (int or None): train epochs, None if irrelevant
-            patience (int or None): early stopping count, None means no early stopping
+            epochs (int or None): train epochs; None if no epochs
+            early_stopping_epochs (int or None): stop after this many epochs without improvement of the validation ISE (requires val_frac > 0); None means no early stopping
         """
-        assert (train_frac > 0.) and (train_frac <= 1.), "train_frac must be in (0,1]."
-        if train_frac == 1.0:
-            assert n_grid_ISE is None, "100% of samples used for training, cannot perform cross-validation (n_grid_ISE should be None)."
-        if n_grid_ISE is None:
-            assert train_frac == 1.0, "if there is no grid for cross-validation ISE, we expect training on full dataset. Please subsample manually if this was intentional."
+        if not 0. <= val_frac < 1.:
+            raise ValueError("val_frac must be in [0,1).")
+        if (early_stopping_epochs is not None) and (val_frac == 0.):
+            raise ValueError("early stopping requires a validation set (val_frac > 0).")
+        if (len(self.h) > 1) and (val_frac == 0.):
+            raise ValueError("selecting among several h requires a validation set (val_frac > 0).")
 
         # check if epochs relevant
         if epochs is None:
             epochs = 1
-        # train-CV split index
-        x_train, x_val, y_train, y_val = ut.train_test_split(x, y, train_frac)
-        # sample auxiliary features
-        y_aux_train = self.sample_y_aux(y_train)        
+        # train-validation split, auxiliary samples and feature scaling are shared by all bandwidth candidates
+        x_train, x_val, y_train, y_val = ut.train_test_split(x, y, val_frac)
+        # sample auxiliary features; candidate h uses the first M = round(c/h) samples of each observation
+        Ms = [max(1, round(self.c / h)) for h in self.h]
+        sample_aux, aux_mean, aux_scale = self.aux_sampler()
+        y_aux_all = sample_aux((len(y_train), max(Ms)))
         # feature-scaling parameters
-        self.set_sample_scaling_params(x_train, y_train, y_aux_train)
+        self.set_sample_scaling_params(x_train, y_train)
         # min-max scale y
         y_01 = (y_train-self.y_min)/(self.y_max-self.y_min)
-        # training targets
-        targets = self.compute_targets(y_01, y_aux_train)
-        # label-scaling parameters
-        self.set_target_scaling_params(targets)
         # standardize
         x_train = self.standardize(x_train, self.x_mean, self.x_scale)
-        y_aux_train = self.standardize(y_aux_train, self.y_aux_mean, self.y_aux_scale)
-        targets = self.standardize(targets, self.t_mean, self.t_scale)
-        
-        # create the condensite RepeatDataset for training
-        train_dataset = RepeatDataset(x=x_train, 
-                                      y_aux=y_aux_train, 
-                                      targets=targets, 
-                                      M=self.M)
 
-        # training
+        # fit for each bandwidth candidate and keep the one with the lowest validation ISE
+        initial_predictor = self.predictor
+        val_ise_by_h, best = {}, None
+        for h, M in zip(self.h, Ms):
+            if len(self.h) > 1:
+                self.predictor = deepcopy(initial_predictor)
+            # auxiliary samples in blocks of M per observation (c.f. RepeatDataset)
+            y_aux_train = y_aux_all[:, :M].reshape(-1, 1)
+            y_aux_std = (y_aux_train - aux_mean) / aux_scale
+            # training targets
+            targets = self.compute_targets(y_01, y_aux_train, h, M)
+            # label-scaling parameters (they depend on h; overwrite at the end using the best selected h)
+            self.set_target_scaling_params(targets)
+            targets = self.standardize(targets, self.t_mean, self.t_scale)
+            # create the condensite RepeatDataset for training
+            train_dataset = RepeatDataset(x=x_train,
+                                          y_aux=y_aux_std,
+                                          targets=targets,
+                                          M=M)
+            # training
+            val_ise, epoch = self._train_epochs(
+                train_dataset, x_val, y_val, 
+                val_frac, n_grid_ISE,verbose, epochs, early_stopping_epochs
+            )
+            val_ise_by_h[h] = val_ise
+            if (verbose > 0) and (len(self.h) > 1):
+                logger.info(f"h={h}: validation ISE {val_ise:.4f}")
+            if (best is None) or (val_ise < best['val_ise']):
+                best = {'h': h, 'M': M, 'val_ise': val_ise, 'epoch': epoch, 'predictor': self.predictor,
+                        't_mean': self.t_mean, 't_scale': self.t_scale}
+
+        # select best bandwidth
+        self.best_h = best['h']
+        self.M_best_h = best['M']
+        self.predictor = best['predictor']
+        self.t_mean, self.t_scale = best['t_mean'], best['t_scale']
+        self.val_ise = best['val_ise']
+
+        # return run summary
+        return {'h': self.best_h,
+                'M': self.M_best_h,
+                'epochs': best['epoch'],  # note that count starts from 0; this is total epochs run, not epoch of best model.
+                'val_ISE': self.val_ise,
+                'val_ISE_by_h': val_ise_by_h}
+
+    def _train_epochs(self, train_dataset, x_val, y_val, val_frac, n_grid_ISE, verbose, epochs, early_stopping_epochs):
+        """
+        Train the predictor for up to the given number of epochs (c.f. fit for the arguments). With a validation set, the
+        epoch with the lowest validation ISE is kept in self.predictor, and training stops early if requested.
+        Returns:
+            validation ISE of the kept epoch (inf without validation set), index of the last epoch run
+        """
         best_val_ise = float('inf')
         best_epoch_predictor = None
         for epoch in range(epochs):
@@ -201,7 +245,7 @@ class Condensite:
                 mse = round(mse, 4)
 
             # fit on validation set
-            if n_grid_ISE is not None:
+            if val_frac > 0.:
                 # compute ISE on validation set
                 val_ise = ut.ISE(self, x_val, y_val, n_grid_ISE)
                 val_output = f" validation ISE: {val_ise:.4f}"
@@ -217,37 +261,30 @@ class Condensite:
                     logger.info(f"Train mse: {mse}" + val_output)
 
             # Early stopping
-            if train_frac < 1.:
+            if val_frac > 0.:
                 if val_ise < best_val_ise:  # expected to apply in first epoch
                     best_val_ise = val_ise
                     best_epoch_predictor = deepcopy(self.predictor)
                     epochs_without_improvement = 0
                 else:
                     epochs_without_improvement += 1
-                    if (patience is not None) and (epochs_without_improvement >= patience):
+                    if (early_stopping_epochs is not None) and (epochs_without_improvement >= early_stopping_epochs):
                         if verbose>0:
                             logger.info(f'Early stopping at epoch {epoch + 1}')
                         break
             else:
                 best_epoch_predictor = self.predictor
-        
+
         # select best network
         self.predictor = best_epoch_predictor
-        self.ise = best_val_ise
-        
-        # return run summary
-        return {'h': self.h,
-                'M': self.M,
-                'epochs': epoch,  # note that count starts from 0; this is total epochs run, not epoch of best model.
-                'ISE': best_val_ise}
+        return best_val_ise, epoch
 
-    def set_sample_scaling_params(self, x_train, y_train, y_aux_train):
+    def set_sample_scaling_params(self, x_train, y_train):
         """
-        Store values for scaling the observations and auxiliary samples.
+        Store values for scaling the observations.
         Args:
             x_train (torch.Tensor): training set feature values
             y_train (torch.Tensor): training set labels
-            y_aux_train (torch.Tensor): auxiliary labels 
         """
         # standard scaling for x
         self.x_mean = x_train.mean(dim=0).to(self.device)
@@ -260,9 +297,6 @@ class Condensite:
             self.y_min, self.y_max = self.y_range
             if (y_train.min() < self.y_min) or (y_train.max() > self.y_max):
                 raise ValueError("y_train lies outside y_range.")
-        # standard scaling for auxiliary samples y_aux
-        self.y_aux_mean = y_aux_train.mean(dim=0).to(self.device)
-        self.y_aux_scale = y_aux_train.std(dim=0).to(self.device)
 
     def set_target_scaling_params(self, t_train):
         """
@@ -296,7 +330,8 @@ class Condensite:
         x = self.standardize(x, self.x_mean, self.x_scale)
         y_points_01 = torch.linspace(0, 1, n_grid).view(-1,1)        
         grid_y = y_points_01.repeat(len(x), 1)
-        grid_y = self.standardize(grid_y, self.y_aux_mean, self.y_aux_scale)
+        _, aux_mean, aux_scale = self.aux_sampler()
+        grid_y = (grid_y - aux_mean) / aux_scale
         dataset = RepeatDataset(
             x=x, 
             y_aux=grid_y, 
@@ -347,26 +382,28 @@ class Condensite:
         cdes = cdes / area
         return cdes
     
-    def sample_y_aux(self, y):
+    @staticmethod
+    def aux_sampler():
         """
-        Sample auxiliary labels.
-        Args:
-            y (torch.Tensor): the (n) y values
+        Auxiliary samples on the rescaled support [0,1] of y: a function drawing samples of a given shape, and the mean
+        and standard deviation of the samples (used for standardization).
         """
-        return torch.empty(len(y)*self.M).uniform_(0, 1).view(-1,1)
+        return (lambda shape: torch.empty(shape).uniform_(0, 1)), 0.5, 12**-0.5
 
-    def compute_targets(self, y_01, y_aux):
-        """ 
+    def compute_targets(self, y_01, y_aux, h, M):
+        """
         Compute targets via $K_h(Y_i-Y_{im})$. If self.reflect, each observation is additionally reflected at 0 and 1, i.e. $K_h(Y_i-Y_{im}) + K_h(-Y_i-Y_{im}) + K_h((2-Y_i)-Y_{im})$, so that no kernel mass is lost at the boundaries of the rescaled support [0,1].
         Args:
             y_01 (torch.Tensor): observed y rescaled to [0,1]
-            y_aux (torch.Tensor): auxiliary labels for target construction
+            y_aux (torch.Tensor): auxiliary labels for target construction, in blocks of M per observation
+            h (float): kernel bandwidth
+            M (int): number of auxiliary samples per observation
         """
         # prepare for grid
-        y_bar = y_01.repeat_interleave(self.M, dim=0).view(-1,1)
+        y_bar = y_01.repeat_interleave(M, dim=0).view(-1,1)
         # compute auxiliary densities
         Kh = dist.MultivariateNormal(loc=torch.zeros(1),
-                                     covariance_matrix=torch.eye(1) * self.h**2)
+                                     covariance_matrix=torch.eye(1) * h**2)
         targets = torch.exp(Kh.log_prob(y_bar - y_aux))
         if self.reflect:
             # mirror images of each observation at 0 and 1

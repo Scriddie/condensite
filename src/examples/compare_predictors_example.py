@@ -28,8 +28,8 @@ tree_predictor = TreePredictor(params={
     'max_leaf_nodes': 100,
     'l2_regularization': 0.1,
 })
-hgb_model = cde.Condensite(tree_predictor, h=0.01, M=100, name='hgb_model')
-hgb_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100)
+hgb_model = cde.Condensite(tree_predictor, h=[0.01], c=1, name='hgb_model')
+hgb_model.fit(x_train, y_train, val_frac=0.2)
 
 # model 2) condensité with a lgbm predictor
 lgbm_predictor = LGBMPredictor(params={
@@ -39,8 +39,8 @@ lgbm_predictor = LGBMPredictor(params={
     'max_bin': 40,
     'num_leaves': 40,
 })
-lgbm_model = cde.Condensite(lgbm_predictor, h=0.01, M=100, name='lgbm_model')
-lgbm_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, verbose=1)
+lgbm_model = cde.Condensite(lgbm_predictor, h=[0.01], c=1, name='lgbm_model')
+lgbm_model.fit(x_train, y_train, val_frac=0.2, verbose=1)
 
 # model 3) condensité with a torch predictor
 torch_predictor = NNPredictor(
@@ -50,16 +50,16 @@ torch_predictor = NNPredictor(
     lr=1e-3,
     weight_decay=1e-4
 )
-torch_model = cde.Condensite(torch_predictor, h=0.01, M=100, name='torch_model')
-torch_model.fit(x_train, y_train, train_frac=0.8, n_grid_ISE=100, epochs=20, patience=5)
+torch_model = cde.Condensite(torch_predictor, h=[0.01], c=1, name='torch_model')
+torch_model.fit(x_train, y_train, val_frac=0.2, epochs=20, early_stopping_epochs=5)
 
 # model 4) condensité with a TabICL predictor
 tabicl_predictor = TabICLPredictor(
     n_estimators=1,
 )
 # smaller $M$ (and consequently larger $h$) here to keep prediction time fast
-tabicl_model = cde.Condensite(tabicl_predictor, h=0.1, M=20, name='tabicl_model')
-tabicl_model.fit(x_train, y_train, train_frac=1.0, n_grid_ISE=None)
+tabicl_model = cde.Condensite(tabicl_predictor, h=[0.1], c=2, name='tabicl_model')
+tabicl_model.fit(x_train, y_train)
 
 # ------------------------------------------------------------------------------
 

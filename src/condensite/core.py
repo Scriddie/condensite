@@ -151,15 +151,19 @@ class Condensite:
 
     def fit(self, x, y, *, val_frac=0., n_grid_ISE=100, verbose=0, epochs=None, early_stopping_epochs=None):
         """
-        Train the predictor on the data.
+        Train the predictor on the data. With val_frac > 0, the validation ISE selects h (and the best epoch). Predictors
+        fitted in a single pass (epochs None) are then refitted on all data with the selected h; with epochs, the
+        selected model is kept, since its number of epochs was chosen for the training share only.
         Args:
             x (tensor): (n x d)
             y (tensor): (n x 1)
-            val_frac (float): validation data frac in order to compute ISE for best epoch selection and early stopping
+            val_frac (float): validation data frac in order to compute ISE for selection of h, best epoch selection and early stopping
             n_grid_ISE (int): number of grid points for the validation ISE.
             verbose (int): verbosity of training.
-            epochs (int or None): train epochs; None if no epochs
+            epochs (int or None): train epochs; None for predictors fitted in a single pass (e.g. trees)
             early_stopping_epochs (int or None): stop after this many epochs without improvement of the validation ISE (requires val_frac > 0); None means no early stopping
+        Returns:
+            run summary; its validation ISE is that of the selected h before any refit
         """
         if not 0. <= val_frac < 1.:
             raise ValueError("val_frac must be in [0,1).")
@@ -168,13 +172,42 @@ class Condensite:
         if (len(self.h) > 1) and (val_frac == 0.):
             raise ValueError("selecting among several h requires a validation set (val_frac > 0).")
 
-        # check if epochs relevant
-        if epochs is None:
-            epochs = 1
-        # train-validation split, auxiliary samples and feature scaling are shared by all bandwidth candidates
+        # single-pass predictors are refitted on all data after the selection; decided before epochs defaults to 1
+        refit = (val_frac > 0.) and (epochs is None)
+        n_epochs = 1 if epochs is None else epochs
+        unfitted_predictor = deepcopy(self.predictor) if refit else None
+
+        # train-validation split, then selection of h on the validation set
         x_train, x_val, y_train, y_val = ut.train_test_split(x, y, val_frac)
+        best, val_ise_by_h = self._fit_candidates(x_train, y_train, x_val, y_val, self.h,
+                                                  val_frac, n_grid_ISE, verbose, n_epochs, early_stopping_epochs)
+        self.best_h = best['h']
+        self.M_best_h = best['M']
+        self.val_ise = best['val_ise']
+        # refit with the selected h on all data
+        if refit:
+            self.predictor = unfitted_predictor
+            best, _ = self._fit_candidates(x, y, None, None, [self.best_h],
+                                           0., n_grid_ISE, verbose, 1, None)
+
+        # return run summary
+        return {'h': self.best_h,
+                'M': self.M_best_h,
+                'epochs': best['epoch'],  # note that count starts from 0; this is total epochs run, not epoch of best model.
+                'val_ISE': self.val_ise,
+                'val_ISE_by_h': val_ise_by_h,
+                'refit': refit}
+
+    def _fit_candidates(self, x_train, y_train, x_val, y_val, hs, val_frac, n_grid_ISE, verbose, epochs, early_stopping_epochs):
+        """
+        Fit the predictor for each bandwidth candidate in hs on the training data, and keep the one with the lowest
+        validation ISE in self.predictor, self.t_mean and self.t_scale (c.f. fit for the arguments). Feature scaling and
+        auxiliary samples are shared by all candidates.
+        Returns:
+            the selected candidate (dict with h, M, val_ise, epoch, ...), validation ISE of each candidate
+        """
         # sample auxiliary features; candidate h uses the first M = round(c/h) samples of each observation
-        Ms = [max(1, round(self.c / h)) for h in self.h]
+        Ms = [max(1, round(self.c / h)) for h in hs]
         sample_aux, aux_mean, aux_scale = self.aux_sampler()
         y_aux_all = sample_aux((len(y_train), max(Ms)))
         # feature-scaling parameters
@@ -187,8 +220,8 @@ class Condensite:
         # fit for each bandwidth candidate and keep the one with the lowest validation ISE
         initial_predictor = self.predictor
         val_ise_by_h, best = {}, None
-        for h, M in zip(self.h, Ms):
-            if len(self.h) > 1:
+        for h, M in zip(hs, Ms):
+            if len(hs) > 1:
                 self.predictor = deepcopy(initial_predictor)
             # auxiliary samples in blocks of M per observation (c.f. RepeatDataset)
             y_aux_train = y_aux_all[:, :M].reshape(-1, 1)
@@ -209,25 +242,16 @@ class Condensite:
                 val_frac, n_grid_ISE,verbose, epochs, early_stopping_epochs
             )
             val_ise_by_h[h] = val_ise
-            if (verbose > 0) and (len(self.h) > 1):
+            if (verbose > 0) and (len(hs) > 1):
                 logger.info(f"h={h}: validation ISE {val_ise:.4f}")
             if (best is None) or (val_ise < best['val_ise']):
                 best = {'h': h, 'M': M, 'val_ise': val_ise, 'epoch': epoch, 'predictor': self.predictor,
                         't_mean': self.t_mean, 't_scale': self.t_scale}
 
         # select best bandwidth
-        self.best_h = best['h']
-        self.M_best_h = best['M']
         self.predictor = best['predictor']
         self.t_mean, self.t_scale = best['t_mean'], best['t_scale']
-        self.val_ise = best['val_ise']
-
-        # return run summary
-        return {'h': self.best_h,
-                'M': self.M_best_h,
-                'epochs': best['epoch'],  # note that count starts from 0; this is total epochs run, not epoch of best model.
-                'val_ISE': self.val_ise,
-                'val_ISE_by_h': val_ise_by_h}
+        return best, val_ise_by_h
 
     def _train_epochs(self, train_dataset, x_val, y_val, val_frac, n_grid_ISE, verbose, epochs, early_stopping_epochs):
         """

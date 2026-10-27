@@ -84,6 +84,7 @@ print('PIT frequency per decile:', [round(f, 3) for f in freq.tolist()])
 print(f'weight of the correction: lambda = {booster.lambda_:.3f}')
 
 # out-of-sample ISE comparison of unboosted and boosted model
+print('RESULTS:')
 x_test, y_test = sample_data()
 for model in [unboosted, booster]:
     test_ISE = cde.utils.ISE(model, x_test, y_test, n_grid=100).item()

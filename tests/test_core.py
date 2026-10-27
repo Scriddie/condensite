@@ -76,7 +76,20 @@ def test_aux_samples_shared_across_h():
     x, y = sample_data()
     RecordingPredictor.seen.clear()
     cde.Condensite(RecordingPredictor(), h=[0.05, 0.2], c=0.5).fit(x, y, val_frac=0.2)
-    (M1, u1), (M2, u2) = RecordingPredictor.seen
+    # the first two fits are the selection, the third the refit with the selected h
+    (M1, u1), (M2, u2) = RecordingPredictor.seen[:2]
     assert (M1, M2) == (10, 2)
     # the second candidate uses the first M2 auxiliary samples of each observation
     assert torch.equal(u2.view(-1, M2), u1.view(-1, M1)[:, :M2])
+
+
+def test_refit():
+    torch.manual_seed(0)
+    x, y = sample_data()
+    model = cde.Condensite(TreePredictor(), h=[0.05], c=0.5)
+    # a single-pass predictor is refitted on all data after the selection
+    assert model.fit(x, y, val_frac=0.2)['refit']
+    assert torch.allclose(model.x_mean, x.mean(dim=0))
+    # with epochs, the model fitted on the training share is kept
+    assert not model.fit(x, y, val_frac=0.2, epochs=2)['refit']
+    assert not torch.allclose(model.x_mean, x.mean(dim=0))

@@ -1,5 +1,5 @@
 # condensité
-(pronounciation: _kon-dahn-see-tay_, like the French word for "density")
+(pronunciation: _kon-dahn-see-tay_, like the French word for "density")
 
 **Installation.**
 ```
@@ -76,6 +76,16 @@ x_test, y_test = sample_data()
 test_ISE = cde.utils.ISE(hgb_model, x_test, y_test, n_grid=100).item()
 print(f'{hgb_model.name}:\t {test_ISE=:.4f}')
 ```
+
+**PIT boosting.**
+`cde.PITBoosting` corrects the predictive distribution of a condensité model with a second condensité model. If F₀(y | x) is the conditional CDF predicted by the first (base) model, the probability integral transform (PIT) U = F₀(Y | x) is uniform on [0, 1] when the base model is correct. Any deviation from uniformity reflects an error. A second condensité model (the correction) estimates g on [0, 1], and the corrected density is p(y | x) = p₀(y | x) · [1 − λ + λ ĝ(F₀(y | x) | x)]. The weight λ ∈ [0, 1] maximizes the out-of-fold log-likelihood, so that λ = 0 leaves the base model unchanged when the correction does not generalize. Base and correction models are cross-fitted over K folds.
+```python
+base = cde.Condensite(base_predictor, h=[0.01], c=1)
+correction = cde.Condensite(correction_predictor, h=[0.1], c=1)
+booster = cde.PITBoosting(base, correction, K=5).fit(x_train, y_train)
+cdes, y_points = booster.predict(x_test, n_grid=100)
+```
+A complete example is in `src/examples/pit_boosting_example.py`.
 
 **Reference.**
 If you find our algorithms useful please consider citing

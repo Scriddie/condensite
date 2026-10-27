@@ -42,19 +42,19 @@ def sample_data(n=300):
 def test_float_h_raises():
     x, y = sample_data()
     with pytest.raises(TypeError):
-        cde.Condensite(TreePredictor(), h=0.05, c=0.5).fit(x, y)
+        cde.Condensite(TreePredictor(), h=0.05, Mh=0.5).fit(x, y)
 
 
 def test_several_h_without_validation_raises():
     x, y = sample_data()
     with pytest.raises(ValueError):
-        cde.Condensite(TreePredictor(), h=[0.01, 0.1], c=0.5).fit(x, y)
+        cde.Condensite(TreePredictor(), h=[0.01, 0.1], Mh=0.5).fit(x, y)
 
 
 def test_h_selection():
     torch.manual_seed(0)
     x, y = sample_data()
-    model = cde.Condensite(TreePredictor(), h=[0.005, 0.05, 0.2], c=0.5)
+    model = cde.Condensite(TreePredictor(), h=[0.005, 0.05, 0.2], Mh=0.5)
     summary = model.fit(x, y, val_frac=0.2)
     ises = summary['val_ISE_by_h']
     assert list(ises) == [0.005, 0.05, 0.2]
@@ -75,7 +75,7 @@ class RecordingPredictor(TreePredictor):
 def test_aux_samples_shared_across_h():
     x, y = sample_data()
     RecordingPredictor.seen.clear()
-    cde.Condensite(RecordingPredictor(), h=[0.05, 0.2], c=0.5).fit(x, y, val_frac=0.2)
+    cde.Condensite(RecordingPredictor(), h=[0.05, 0.2], Mh=0.5).fit(x, y, val_frac=0.2)
     # the first two fits are the selection, the third the refit with the selected h
     (M1, u1), (M2, u2) = RecordingPredictor.seen[:2]
     assert (M1, M2) == (10, 2)
@@ -86,7 +86,7 @@ def test_aux_samples_shared_across_h():
 def test_refit():
     torch.manual_seed(0)
     x, y = sample_data()
-    model = cde.Condensite(TreePredictor(), h=[0.05], c=0.5)
+    model = cde.Condensite(TreePredictor(), h=[0.05], Mh=0.5)
     # a single-pass predictor is refitted on all data after the selection
     assert model.fit(x, y, val_frac=0.2)['refit']
     assert torch.allclose(model.x_mean, x.mean(dim=0))

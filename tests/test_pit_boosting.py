@@ -6,8 +6,8 @@ from test_core import TreePredictor, sample_data
 def test_cross_fitted_PITs():
     torch.manual_seed(0)
     x, y = sample_data()
-    base = cde.Condensite(TreePredictor(), h=[0.05], c=0.5)
-    correction = cde.Condensite(TreePredictor(), h=[0.1], c=1)
+    base = cde.Condensite(TreePredictor(), h=[0.05], Mh=0.5)
+    correction = cde.Condensite(TreePredictor(), h=[0.1], Mh=1)
     booster = cde.PITBoosting(base, correction, K=3).fit(x, y)
     assert len(booster.base_models) == 3
     assert torch.bincount(booster.folds).tolist() == [100, 100, 100]
@@ -26,8 +26,8 @@ def test_choose_lambda():
 def test_predict():
     torch.manual_seed(0)
     x, y = sample_data()
-    base = cde.Condensite(TreePredictor(), h=[0.05], c=0.5)
-    correction = cde.Condensite(TreePredictor(), h=[0.1], c=1)
+    base = cde.Condensite(TreePredictor(), h=[0.05], Mh=0.5)
+    correction = cde.Condensite(TreePredictor(), h=[0.1], Mh=1)
     booster = cde.PITBoosting(base, correction, K=2).fit(x, y)
     cdes, y_points = booster.predict(x[:20], 50)
     assert torch.allclose(torch.trapz(cdes, y_points.flatten(), dim=1), torch.ones(20))

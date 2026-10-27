@@ -116,7 +116,7 @@ class Condensite:
 
     def __init__(self, predictor: CondensitePredictor, 
                  h: list[float],
-                 c: float,
+                 Mh: float,
                  name: str = 'condensite',
                  prediction_batch_size: int | None = None,
                  reflect: bool = True,
@@ -125,7 +125,7 @@ class Condensite:
         Args:
             predictor (CondensitePredictor): conditional density estimator.
             h (list of float): candidate kernel bandwidths on the [0,1]-rescaled y; with several, fit selects the one with the lowest validation ISE (requires val_frac > 0).
-            c (float): M*h; bandwidth h uses M = round(c/h) auxiliary samples per observation.
+            Mh (float): M*h; bandwidth h uses M = round(Mh/h) auxiliary samples per observation.
             name (str): model name
             prediction_batch_size (int): batch size when predicting (to limit RAM usage)
             reflect (bool): reflect observations at the boundaries of [0,1] when computing targets (c.f. compute_targets).
@@ -136,7 +136,7 @@ class Condensite:
         self.predictor = predictor.to(self.device)
         self.h = h
         self.best_h = None  # set by fit
-        self.c = c
+        self.Mh = Mh
         self.M_best_h = None  # number of auxiliary samples of the selected h; set by fit
         self.reflect = reflect
         self.y_range = y_range
@@ -206,8 +206,8 @@ class Condensite:
         Returns:
             the selected candidate (dict with h, M, val_ise, epoch, ...), validation ISE of each candidate
         """
-        # sample auxiliary features; candidate h uses the first M = round(c/h) samples of each observation
-        Ms = [max(1, round(self.c / h)) for h in hs]
+        # sample auxiliary features; candidate h uses the first M = round(Mh/h) samples of each observation
+        Ms = [max(1, round(self.Mh / h)) for h in hs]
         sample_aux, aux_mean, aux_scale = self.aux_sampler()
         y_aux_all = sample_aux((len(y_train), max(Ms)))
         # feature-scaling parameters

@@ -65,12 +65,12 @@ lgbm_params = {
 # base model of the conditional density of y
 base = cde.Condensite(
     LGBMPredictor(lgbm_params),
-    h=[0.05], c=1, name='base'  # h deliberately chosen wide so boosting applies
+    h=[0.05], Mh=1, name='base'  # h deliberately chosen wide so boosting applies
 )
 # correction: conditional density of the base model's PITs on [0, 1]
 correction = cde.Condensite(
     LGBMPredictor(lgbm_params),
-    h=[0.1], c=1, name='correction'
+    h=[0.1], Mh=1, name='correction'
 )
 booster = cde.PITBoosting(base, correction, K=5, name='boosted')
 booster.fit(x_train, y_train)

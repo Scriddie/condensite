@@ -40,7 +40,7 @@ tree_predictor = TreePredictor(params={
     'max_leaf_nodes': 100,
     'l2_regularization': 0.1,
 })
-hgb_model = cde.Condensite(tree_predictor, h=[0.01], c=1, name='hgb_model')
+hgb_model = cde.Condensite(tree_predictor, h=[0.01], Mh=1, name='hgb_model')
 
 # generate some data and fit
 def sample_data(n_obs=1000, n_features=10):
